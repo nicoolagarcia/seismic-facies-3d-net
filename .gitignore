@@ -1,0 +1,34 @@
+# Entorno virtual
+venv/
+
+# Bytecode / cache de Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Documentos de tesis, planificacion e instrucciones (no son parte del desarrollo)
+Anteproyecto - Nicola Garcia.md
+Anteproyecto Nicola Garcia.docx
+Lineamientos_Informe_Trabajo_de_Grado_UNIMET.md
+CLAUDE.md
+mejoras.txt
+walkthrough.md
+Tesis_LaTeX/
+
+# Datos crudos de entrenamiento/validacion (muy pesados, no se versionan)
+train/
+validation/
+data/
+prediction/
+
+# Checkpoints de modelos (>100MB c/u, superan el limite de GitHub; ver README para el link de Drive)
+checkpoints/
+
+# Archivos de IDE / editor
+*.code-workspace
+.vscode/
+.idea/
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
