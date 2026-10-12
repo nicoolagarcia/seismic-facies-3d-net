@@ -19,7 +19,8 @@ class Trainer:
         self.device = device
         self.scheduler = scheduler
         self.num_classes = num_classes
-        self.scaler = GradScaler()
+        self.use_amp = (self.device.type == 'cuda') if isinstance(self.device, torch.device) else (self.device == 'cuda')
+        self.scaler = GradScaler(enabled=self.use_amp)
         self.checkpoint_dir = checkpoint_dir
         
         if not os.path.exists(checkpoint_dir):
@@ -35,14 +36,18 @@ class Trainer:
             
             self.optimizer.zero_grad()
             
-            # Using Mixed Precision
-            with autocast():
+            if self.use_amp:
+                with autocast():
+                    output = self.model(data)
+                    loss = self.loss_fn(output, target)
+                self.scaler.scale(loss).backward()
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+            else:
                 output = self.model(data)
                 loss = self.loss_fn(output, target)
-            
-            self.scaler.scale(loss).backward()
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
+                loss.backward()
+                self.optimizer.step()
             
             total_loss += loss.item()
             pbar.set_postfix({'batch_loss': f"{loss.item():.4f}"})
@@ -59,7 +64,11 @@ class Trainer:
         for data, target in pbar:
             data, target = data.to(self.device), target.to(self.device)
             
-            with autocast():
+            if self.use_amp:
+                with autocast():
+                    output = self.model(data)
+                    loss = self.loss_fn(output, target)
+            else:
                 output = self.model(data)
                 loss = self.loss_fn(output, target)
             

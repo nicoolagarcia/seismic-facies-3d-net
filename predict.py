@@ -10,7 +10,8 @@ from src.dataset import SeismicDataset
 from src.visualizer import plot_seismic_slices
 
 def inference_sliding_window(model, volume, patch_size=(128, 128, 128), stride=(64, 64, 64),
-                              num_classes=6, device='cuda', return_probs=False):
+                              num_classes=6, device='cuda', return_probs=False,
+                              progress_callback=None, cancel_event=None):
     """
     Performs sliding window inference on a large volume using overlapping patches.
 
@@ -19,59 +20,96 @@ def inference_sliding_window(model, volume, patch_size=(128, 128, 128), stride=(
         volume: (D, H, W) numpy array with the full seismic cube.
         patch_size, stride: sliding-window geometry.
         num_classes: number of output channels/facies classes.
-        device: torch device.
+        device: torch device or string ('cuda', 'cpu').
         return_probs: if True, also returns the averaged softmax probability
-            volume (num_classes, D, H, W) alongside the hard argmax mask. This
-            is required for threshold sweeps and probability-map visualization
-            (see evaluate.py), since the default argmax discards the
-            confidence information needed to test thresholds other than 0.5.
+            volume (num_classes, D, H, W) alongside the hard argmax mask.
+        progress_callback: optional callback func(step, total_steps, message)
+        cancel_event: optional threading.Event to abort inference gracefully.
 
     Returns:
         pred (np.ndarray): argmax segmentation mask, shape (D, H, W).
         probs (np.ndarray, optional): softmax probability volume, shape
             (num_classes, D, H, W). Only returned if return_probs=True.
     """
+    if isinstance(device, str):
+        if device == 'cuda' and not torch.cuda.is_available():
+            device = torch.device('cpu')
+        else:
+            device = torch.device(device)
+
     model.eval()
-    d, h, w = volume.shape
-    
+    model.to(device)
+
+    orig_d, orig_h, orig_w = volume.shape
+
+    # Handle volume dimensions smaller than patch_size by padding
+    pad_d = max(0, patch_size[0] - orig_d)
+    pad_h = max(0, patch_size[1] - orig_h)
+    pad_w = max(0, patch_size[2] - orig_w)
+    if pad_d > 0 or pad_h > 0 or pad_w > 0:
+        vol_working = np.pad(volume, ((0, pad_d), (0, pad_h), (0, pad_w)), mode='reflect')
+    else:
+        vol_working = volume
+
+    d, h, w = vol_working.shape
+
     # Initialize output score maps and count map for averaging
-    output = torch.zeros((num_classes, d, h, w)).to(device)
-    counts = torch.zeros((d, h, w)).to(device)
-    
+    output = torch.zeros((num_classes, d, h, w), device=device)
+    counts = torch.zeros((d, h, w), device=device)
+
     # Slide across dimensions
     z_steps = list(range(0, d - patch_size[0] + 1, stride[0]))
     y_steps = list(range(0, h - patch_size[1] + 1, stride[1]))
     x_steps = list(range(0, w - patch_size[2] + 1, stride[2]))
-    
+
     # Add final steps if volume isn't divisible by stride
-    if not z_steps or z_steps[-1] != d - patch_size[0]: z_steps.append(d - patch_size[0])
-    if not y_steps or y_steps[-1] != h - patch_size[1]: y_steps.append(h - patch_size[1])
-    if not x_steps or x_steps[-1] != w - patch_size[2]: x_steps.append(w - patch_size[2])
-    
+    if not z_steps or z_steps[-1] != d - patch_size[0]:
+        z_steps.append(d - patch_size[0])
+    if not y_steps or y_steps[-1] != h - patch_size[1]:
+        y_steps.append(h - patch_size[1])
+    if not x_steps or x_steps[-1] != w - patch_size[2]:
+        x_steps.append(w - patch_size[2])
+
+    total_patches = len(z_steps) * len(y_steps) * len(x_steps)
+    step_count = 0
+
     with torch.no_grad():
-        for z in tqdm(z_steps, desc="Inferencia de Cubo (Z)"):
+        for z in z_steps:
             for y in y_steps:
                 for x in x_steps:
+                    if cancel_event is not None and cancel_event.is_set():
+                        return (None, None) if return_probs else None
+
                     # Extract patch
-                    patch = volume[z:z+patch_size[0], y:y+patch_size[1], x:x+patch_size[2]]
-                    
+                    patch = vol_working[z:z+patch_size[0], y:y+patch_size[1], x:x+patch_size[2]]
+
                     # Normalize patch
                     patch = (patch - patch.mean()) / (patch.std() + 1e-8)
-                    
+
                     # To tensor: (1, 1, D, H, W)
                     patch_tensor = torch.from_numpy(patch).unsqueeze(0).unsqueeze(0).float().to(device)
-                    
+
                     # Predict
                     logits = model(patch_tensor)
-                    probs = torch.softmax(logits, dim=1).squeeze(0) # (6, D, H, W)
-                    
+                    probs = torch.softmax(logits, dim=1).squeeze(0)  # (C, D, H, W)
+
                     # Accumulate
                     output[:, z:z+patch_size[0], y:y+patch_size[1], x:x+patch_size[2]] += probs
                     counts[z:z+patch_size[0], y:y+patch_size[1], x:x+patch_size[2]] += 1
-                    
+
+                    step_count += 1
+                    if progress_callback is not None:
+                        progress_callback(step_count, total_patches, f"Inferencia: parche {step_count}/{total_patches}")
+
     # Average overlapping areas
+    counts = torch.clamp(counts, min=1.0)
     output /= counts.unsqueeze(0)
     probs_np = output.cpu().numpy()
+
+    # Crop unpadded region if needed
+    if pad_d > 0 or pad_h > 0 or pad_w > 0:
+        probs_np = probs_np[:, :orig_d, :orig_h, :orig_w]
+
     pred = np.argmax(probs_np, axis=0)
 
     if return_probs:

@@ -26,6 +26,7 @@ train.py         # Entrenamiento
 predict.py       # Inferencia y visualización
 evaluate.py      # Evaluación cuantitativa sobre el set de validación
 inspect_data.py  # Inspección rápida de un volumen .npz
+gui_app.py       # Interfaz gráfica (GUI) interactiva de predicción y visualización
 ```
 
 Los directorios `train/`, `validation/`, `data/` y `prediction/` (datos crudos) y `checkpoints/` (pesos entrenados) no se versionan en este repositorio por su tamaño. Ver [Modelos y datos](#modelos-y-datos-pesados).
@@ -36,9 +37,17 @@ Los directorios `train/`, `validation/`, `data/` y `prediction/` (datos crudos) 
 pip install -r requirements.txt
 ```
 
-Dependencias principales: `torch`, `torchvision`, `numpy`, `matplotlib`, `tqdm`, `scipy`.
+Dependencias principales: `torch`, `torchvision`, `numpy`, `matplotlib`, `tqdm`, `scipy`, `customtkinter`.
 
 ## Uso
+
+### Interfaz Gráfica (GUI Interactiva)
+
+Inicia la interfaz de escritorio para seleccionar modelo, cargar volumen y visualizar la predicción:
+```bash
+python gui_app.py
+```
+*(En Windows también puedes hacer doble clic en `run_gui.bat`)*
 
 ### Entrenamiento
 
@@ -54,7 +63,7 @@ python train.py --train_dir train/ --val_dir validation/ --epochs 20 --batch_siz
 
 Si hay clases sub-representadas, se pueden ponderar con `--weights` (una por clase, ej. `--weights 1.0 2.0 2.0 1.5 1.5 3.0`).
 
-### Inferencia
+### Inferencia por Consola
 
 ```bash
 python predict.py --checkpoint checkpoints/best_model.pth --prediction_dir prediction/f3d --vol_shape 128 128 128

@@ -6,15 +6,6 @@ __pycache__/
 *.pyc
 *.pyo
 
-# Documentos de tesis, planificacion e instrucciones (no son parte del desarrollo)
-Anteproyecto - Nicola Garcia.md
-Anteproyecto Nicola Garcia.docx
-Lineamientos_Informe_Trabajo_de_Grado_UNIMET.md
-CLAUDE.md
-mejoras.txt
-walkthrough.md
-Tesis_LaTeX/
-
 # Datos crudos de entrenamiento/validacion (muy pesados, no se versionan)
 train/
 validation/
